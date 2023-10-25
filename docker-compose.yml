@@ -1,0 +1,27 @@
+version: '3.7'
+
+services:
+  emqx1:
+    image: emqx:latest
+    container_name: emqx
+    environment:
+    - "EMQX_NODE_NAME=emqx@node1.emqx.io"
+    ports:
+      - 1883:1883
+      - 8083:8083
+      - 18083:18083
+    volumes:
+      - ./mqtt/config/emqx.conf:/opt/emqx/etc/emqx.conf
+      - ./mqtt/data:/opt/emqx/data
+
+  mongo:
+    image: mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: example
+    ports:
+      - 27017:27017
+
+    volumes:
+    - ./mongo/data:/data/db

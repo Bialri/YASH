@@ -1,0 +1,6 @@
+
+test_*.py
+**/.env
+mongo
+.idea
+mqtt/data
