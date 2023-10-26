@@ -1,9 +1,10 @@
 import socket
-import asyncio
 import json
+import time
 from abc import ABC, abstractmethod
+import multiprocessing
 
-from exceptions import RegistrationError, RollbackError
+from exceptions import RegistrationError
 from registrator import Registrator
 
 
@@ -68,7 +69,7 @@ class TCPServer(Server):
         await self.loop.sock_sendall(client, json.dumps(response).encode())
         confirm = await self.loop.sock_recv(client, 1024)
         confirm_decoded = json.loads(confirm.decode())
-        if confirm_decoded['staaatus']:
+        if confirm_decoded['status']:
             self.stop = True
         print("message sended")
         client.close()
@@ -76,36 +77,43 @@ class TCPServer(Server):
 
 class BroadcastServer(Server):
 
-    def __init__(self, loop, port, tcp_port):
-        self.loop = loop
+    def __init__(self, port, tcp_port):
         self.port = port
         self.tcp_port = tcp_port
-        self.stop = False
+        self.event = multiprocessing.Event()
 
-    async def run_server(self):
+    def stop(self):
+        self.event.set()
+
+    def run_server(self):
+        self.event.clear()
         server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         server.bind(('', self.port))
+        server.settimeout(5.0)
         print('udp server started')
 
         while True:
-            request = await self.loop.sock_recvfrom(server, 255)
-            print(request[0])
-            await self.handle_client(server, request)
-            if self.stop:
+            if self.event.is_set():
                 print("udp server stoped")
                 break
+            try:
+                print('I am alive')
+                request = server.recvfrom(1024)
+            except TimeoutError:
+                continue
+            except KeyboardInterrupt:
+                continue
+            print(request[0])
+            self.handle_client(server, request)
 
-    async def handle_client(self, sock, client_data):
+    def handle_client(self, sock, client_data):
         recieved_data = client_data[0]
         client_addr = client_data[1]
-        await asyncio.sleep(1)
         print(f'Recieved from: {client_addr[0]}\n data: {recieved_data}')
         return_dict = {'ip': self.get_local_ip(),
                        'port': self.tcp_port}
-        for _ in range(5):
-            await asyncio.sleep(0.1)
-            await self.loop.sock_sendto(sock, json.dumps(return_dict).encode(), client_addr)
-        print(f'Response to server sent')
-        self.stop = True
+        time.sleep(1)
+        sock.sendto(json.dumps(return_dict).encode(), client_addr)
+        print(f'Response sent to server')

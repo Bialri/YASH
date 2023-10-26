@@ -6,15 +6,16 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 
 from requester import APISessionMaker
-from config import API_KEY, DB_URI, HOST, EMQX_PORT
+from config import HOST, EMQX_PORT
 from exceptions import RegistrationError, RollbackError, RegistrationRequestError
 
 
 # steps:
-# 1. create password
-# 2. add user in mongo
-# 3. get id and add new user to EMQX
-# 4. set acl for user
+# 1. validate input string
+# 2. create password
+# 3. add user in mongo
+# 4. get id and add new user to EMQX
+# 5. set acl for user
 
 class Registrator:
 
