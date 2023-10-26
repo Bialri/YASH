@@ -1,7 +1,5 @@
-import asyncio
 import secrets
 import string
-import json
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 
@@ -32,14 +30,6 @@ class Registrator:
         password = ''.join([secrets.choice(pool) for _ in range(self.password_len)])
         return password
 
-    @staticmethod
-    def _serialize(string_input):
-        dumps_input = json.loads(string_input)
-        fields = dumps_input.pop('fields')
-        for field in fields:
-            dumps_input[field['name']] = eval(field['type'])()
-        return dumps_input
-
     async def _create_emqx_user(self, client_id: str, password: str):
         async with self.session_maker.get_session() as session:
             credentials = {'user_id': client_id,
@@ -53,14 +43,21 @@ class Registrator:
         inserted_id = (await self.db_client.local.devices.insert_one(device_object)).inserted_id
         return str(inserted_id)
 
-    async def _emqx_rollback(self, device_id):
+    async def emqx_user_rollback(self, device_id):
         async with self.session_maker.get_session() as session:
             url = f'http://localhost:18083/api/v5/authentication/password_based:built_in_database/users/{device_id}'
             async with session.delete(url=url) as response:
                 if str(response.status)[0] != '2':
                     raise RollbackError("Request error. Delete request failed")
 
-    async def _db_rollback(self, device_id):
+    async def emqx_acl_rollback(self, device_id):
+        async with self.session_maker.get_session() as session:
+            url = f'http://localhost:18083/api/v5/authorization/sources/built_in_database/rules/users/{device_id}'
+            async with session.delete(url=url) as response:
+                if str(response.status)[0] != '2':
+                    raise RollbackError("Request error. Delete request failed")
+
+    async def db_rollback(self, device_id):
         result = await self.db_client.local.devices.delete_one({'_id': ObjectId(device_id)})
         if result.deleted_count == 0:
             raise RollbackError("Id doesn't found")
@@ -89,23 +86,22 @@ class Registrator:
                 if str(response.status)[0] != '2':
                     raise RegistrationError("Request error. ACL rules is not created")
 
-    async def register_device(self, income_str):
-        fields = self._serialize(income_str)
-        created_id = await self._insert_object(fields)
+    async def register_device(self, device_specification):
+        created_id = await self._insert_object(device_specification.model_dump())
         device_password = self._create_password()
 
         try:
             await self._create_emqx_user(created_id, device_password)
         except RegistrationError as e:
-            await self._db_rollback(created_id)
+            await self.db_rollback(created_id)
             raise ExceptionGroup('User is not created', [e,
                                                          RegistrationError('Request error, creation abort')])
 
         try:
-            await self._set_acl_rules(created_id, fields['type'])
+            await self._set_acl_rules(created_id, device_specification.type)
         except RegistrationError as e:
-            await self._db_rollback(created_id)
-            await self._emqx_rollback(created_id)
+            await self.db_rollback(created_id)
+            await self.emqx_user_rollback(created_id)
             raise ExceptionGroup('User is not created', [e,
                                                          RegistrationError('Request error, creation abort')])
 
