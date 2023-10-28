@@ -4,6 +4,8 @@ import time
 from abc import ABC, abstractmethod
 import multiprocessing
 from pydantic import ValidationError
+from socket import socket
+from asyncio import BaseEventLoop
 
 from exceptions import RegistrationError
 from registrator import Registrator
@@ -18,7 +20,11 @@ class Server(ABC):
 
     @staticmethod
     def get_local_ip():
-        """Return actual ip address in local network"""
+        """Get actual ip address in local network.
+
+            Returns:
+                str: Actual ip address.
+        """
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
             # trying to connect to unreachable host
@@ -43,13 +49,25 @@ class TCPServer(Server):
     """TCP server that handle devices wanted to connect to hub and prepare registration functions for them"""
 
     def __init__(self, loop, port, registrator: Registrator):
+        """Create new instance of TCP server
+
+            Args:
+                loop(BaseEventLoop): Event loop.
+                port(int): Port binding to server.
+                registrator(Registrator): Registrator instance.
+        """
         self.port = port
         self.stop = False
         self.loop = loop
         self.registrator = registrator
 
     async def run_server(self):
-        """Start server and yield as generator clients wanted to connect"""
+        """Start server and yield as generator clients wanted to connect
+
+            Yields:
+                str: Name of the current client.
+                callable: Function for client registration.
+        """
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.bind(('', self.port))
         server.listen()
@@ -70,7 +88,18 @@ class TCPServer(Server):
 
     @staticmethod
     def _validate_request(json_string, schema):
-        """Return validated by received schema object"""
+        """Validate json request by given schema.
+
+            Args:
+                json_string(str): String requiring validation.
+                schema(Model): Pydantic validation schema.
+
+            Returns:
+                Model: Validated pydantic model.
+
+            Raises:
+                 RegistrationError: If 'json_string' is not correct.
+        """
         try:
             device_specification = schema.model_validate_json(json_string)
         except ValidationError as e:
@@ -78,12 +107,23 @@ class TCPServer(Server):
         return device_specification
 
     async def _response(self, client, data):
-        """Send response to client"""
+        """Send response to client.
+
+            Args:
+                client(socket): Socket client.
+                data(str): Data to send
+        """
         data_encoded = data.encode()
         await self.loop.sock_sendall(client, data_encoded)
 
     async def _response_error(self, client, error_type, exception):
-        """Send error to client"""
+        """Send error to client.
+
+            Args:
+                client(socket): Socket client.
+                error_type(str): Short traceback of the error.
+                exception(Exception): Exception to response
+        """
         error = ErrorForm(status='failure',
                           type=error_type,
                           detail=str(exception))
@@ -91,13 +131,24 @@ class TCPServer(Server):
         await self._response(client, response)
 
     async def rollback(self, device_id):
-        """Rollback all data created by registrator"""
+        """Rollback all data created by registrator.
+
+            Args:
+                device_id(str): ID to delete.
+        """
         await self.registrator.db_rollback(device_id)
         await self.registrator.emqx_acl_rollback(device_id)
         await self.registrator.emqx_user_rollback(device_id)
 
     async def _handle_client(self, client):
-        """Return clients name and client registration function"""
+        """Return clients name and client registration function
+
+            Args:
+                client(socket): Socket client.
+            Returns:
+                str: Name of the current client.
+                callable: Function for client registration.
+        """
         input_data = (await self.loop.sock_recv(client, 1024)).decode()
         try:
             device_specification = self._validate_request(input_data, DeviceSpecification)
@@ -107,7 +158,11 @@ class TCPServer(Server):
             return None, None
 
         async def register_client():
-            """Return True if device is registered and False if not"""
+            """Register device in system
+
+                Returns:
+                    bool: True if device is registered or False if not
+            """
             try:
                 response = await self.registrator.register_device(device_specification)
             except ExceptionGroup:
@@ -151,16 +206,22 @@ class BroadcastServer(Server):
     helps them find hub ip address in local network and port"""
 
     def __init__(self, port, tcp_port):
+        """Create new instance of UDP server.
+
+            Args:
+                port(int): Port binding to server.
+                tcp_port(int): Port of tcp server.
+        """
         self.port = port
         self.tcp_port = tcp_port
         self.event = multiprocessing.Event()
 
     def stop(self):
-        # Set event to stop server
+        """Set even to stop server."""
         self.event.set()
 
     def run_server(self):
-        # Start server and handle requests
+        """Start UDP server."""
         self.event.clear()
         server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
@@ -183,10 +244,15 @@ class BroadcastServer(Server):
             self._handle_client(server, request)
 
     def _handle_client(self, sock, client_data):
-        """Send to client tcp server address and port"""
-        recieved_data = client_data[0]
+        """Send to client tcp server address and port.
+
+            Args:
+                sock(socket): UDP socket instance.
+                client_data(str): Data received from client.
+        """
+        received_data = client_data[0]
         client_addr = client_data[1]
-        print(f'Recieved from: {client_addr[0]}\n data: {recieved_data}')
+        print(f'Received from: {client_addr[0]}\n data: {received_data}')
         return_dict = {'ip': self.get_local_ip(),
                        'port': self.tcp_port}
         time.sleep(1)
