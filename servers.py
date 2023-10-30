@@ -1,4 +1,5 @@
-import socket
+import asyncio
+from socket import socket, AF_INET, SOCK_DGRAM,  SOCK_STREAM
 import json
 import time
 from abc import ABC, abstractmethod
@@ -25,7 +26,7 @@ class Server(ABC):
             Returns:
                 str: Actual ip address.
         """
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s = socket(AF_INET, SOCK_DGRAM)
         try:
             # trying to connect to unreachable host
             s.connect(('192.255.255.255', 1))
@@ -61,6 +62,9 @@ class TCPServer(Server):
         self.loop = loop
         self.registrator = registrator
 
+        self.server = socket(AF_INET, SOCK_STREAM)
+        self.server.bind(('', self.port))
+
     async def run_server(self):
         """Start server and yield as generator clients wanted to connect
 
@@ -68,15 +72,15 @@ class TCPServer(Server):
                 str: Name of the current client.
                 callable: Function for client registration.
         """
-        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        server.bind(('', self.port))
-        server.listen()
-        server.settimeout(50)  # setting timeout to prevent infinite socket.recv wait with no data
+        self.server.listen(5)
+        self.server.settimeout(10)
+        # setting timeout to prevent infinite socket.recv wait with no data
         print("Tcp server started")
         while True:
             try:
-                conn, addr = await self.loop.sock_accept(server)
+                conn, addr = await self.loop.sock_accept(self.server)
             except TimeoutError:
+                yield None, None
                 continue
             print('client addr: ', addr)
             # Process client request, receive client name and prepared registration function
@@ -116,6 +120,9 @@ class TCPServer(Server):
         data_encoded = data.encode()
         await self.loop.sock_sendall(client, data_encoded)
 
+    def close(self):
+        self.server.close()
+
     async def _response_error(self, client, error_type, exception):
         """Send error to client.
 
@@ -149,7 +156,10 @@ class TCPServer(Server):
                 str: Name of the current client.
                 callable: Function for client registration.
         """
-        input_data = (await self.loop.sock_recv(client, 1024)).decode()
+        try:
+            input_data = (await self.loop.sock_recv(client, 1024)).decode()
+        except OSError:
+            return None, None
         try:
             device_specification = self._validate_request(input_data, DeviceSpecification)
         # send error and abort client registration function creation
@@ -163,41 +173,45 @@ class TCPServer(Server):
                 Returns:
                     bool: True if device is registered or False if not
             """
+            client_socket = socket(AF_INET, SOCK_STREAM)
+            connection_data = (device_specification.response_details.address, int(device_specification.response_details.port))
+            client_socket.connect(connection_data)
+
             try:
                 response = await self.registrator.register_device(device_specification)
             except ExceptionGroup:
-                await self._response_error(client, 'Registration error', "Internal Error")
-                client.close()
+                await self._response_error(client_socket, 'Registration error', "Internal Error")
+                client_socket.close()
                 return False
 
-            await self._response(client, json.dumps(response))
+            await self._response(client_socket, json.dumps(response))
             device_id = response['clientid']
 
             # Trying to receive confirmation from device
             try:
-                confirm_data = (await self.loop.sock_recv(client, 1024)).decode()
+                confirm_data = (await self.loop.sock_recv(client_socket, 1024)).decode()
                 confirm_validated = self._validate_request(confirm_data, Confirm)
                 if confirm_validated.status:
                     self.stop = True
                 # Rollback registration if device send confirmation status False
                 else:
                     await self.rollback(device_id)
-                    client.close()
+                    client_socket.close()
                     return False
 
             # Rollback registration if device send not correct data or doesn't send any data
             except RegistrationError as e:
                 await self.rollback(device_id)
-                await self._response_error(client, 'Wrong format', e)
-                client.close()
+                await self._response_error(client_socket, 'Wrong format', e)
+                client_socket.close()
                 return False
 
             except TimeoutError:
                 await self.rollback(device_id)
-                client.close()
+                client_socket.close()
                 return False
             return True
-
+        client.close()
         return device_specification.name, register_client
 
 
@@ -223,7 +237,7 @@ class BroadcastServer(Server):
     def run_server(self):
         """Start UDP server."""
         self.event.clear()
-        server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        server = socket(AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         server.bind(('', self.port))
