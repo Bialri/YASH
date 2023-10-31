@@ -1,11 +1,10 @@
 import asyncio
-from socket import socket, AF_INET, SOCK_DGRAM,  SOCK_STREAM
+from socket import socket, AF_INET, SOCK_DGRAM,  SOCK_STREAM, IPPROTO_UDP, SOL_SOCKET, SO_REUSEPORT, SO_BROADCAST
 import json
 import time
 from abc import ABC, abstractmethod
 import multiprocessing
 from pydantic import ValidationError
-from socket import socket
 from asyncio import BaseEventLoop
 
 from exceptions import RegistrationError
@@ -159,12 +158,14 @@ class TCPServer(Server):
         try:
             input_data = (await self.loop.sock_recv(client, 1024)).decode()
         except OSError:
+            client.close()
             return None, None
         try:
             device_specification = self._validate_request(input_data, DeviceSpecification)
         # send error and abort client registration function creation
         except RegistrationError as e:
             await self._response_error(client, 'Wrong format', e)
+            client.close()
             return None, None
 
         async def register_client():
@@ -237,9 +238,9 @@ class BroadcastServer(Server):
     def run_server(self):
         """Start UDP server."""
         self.event.clear()
-        server = socket(AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        server.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        server = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
+        server.setsockopt(SOL_SOCKET, SO_REUSEPORT, 1)
+        server.setsockopt(SOL_SOCKET, SO_BROADCAST, 1)
         server.bind(('', self.port))
         server.settimeout(5.0)  # Set timeout to prevent infinite sock.recv wait with no data
         print('udp server started')
