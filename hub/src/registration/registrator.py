@@ -3,10 +3,10 @@ import string
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 
-from requester import APISessionMaker
+from .requester import APISessionMaker
 from config import HOST, EMQX_PORT
-from exceptions import RegistrationError, RollbackError, RegistrationRequestError
-from schemas import DeviceSpecification
+from .exceptions import RegistrationError, RollbackError, RegistrationRequestError
+from .schemas import DeviceSpecification
 
 
 # steps:

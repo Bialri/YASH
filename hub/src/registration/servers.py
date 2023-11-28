@@ -1,5 +1,6 @@
 import asyncio
-from socket import socket, AF_INET, SOCK_DGRAM,  SOCK_STREAM, IPPROTO_UDP, SOL_SOCKET, SO_REUSEPORT, SO_BROADCAST
+from socket import (socket, AF_INET, SOCK_DGRAM, SOCK_STREAM, IPPROTO_UDP, SO_REUSEPORT, SO_BROADCAST,
+                    SOL_SOCKET, SO_REUSEADDR, SHUT_RDWR)
 import json
 import time
 from abc import ABC, abstractmethod
@@ -7,9 +8,9 @@ import multiprocessing
 from pydantic import ValidationError
 from asyncio import BaseEventLoop
 
-from exceptions import RegistrationError
-from registrator import Registrator
-from schemas import DeviceSpecification, ErrorForm, Confirm
+from .exceptions import RegistrationError
+from .registrator import Registrator
+from .schemas import DeviceSpecification, ErrorForm, Confirm
 
 
 class Server(ABC):
@@ -62,6 +63,7 @@ class TCPServer(Server):
         self.registrator = registrator
 
         self.server = socket(AF_INET, SOCK_STREAM)
+        self.server.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         self.server.bind(('', self.port))
 
     async def run_server(self):
@@ -106,7 +108,7 @@ class TCPServer(Server):
         try:
             device_specification = schema.model_validate_json(json_string)
         except ValidationError as e:
-            raise RegistrationError(f'Input string format is not correct. {e}')
+            raise RegistrationError(f'Input string format is not correct. {e.json()}')
         return device_specification
 
     async def _response(self, client, data):
@@ -175,7 +177,8 @@ class TCPServer(Server):
                     bool: True if device is registered or False if not
             """
             client_socket = socket(AF_INET, SOCK_STREAM)
-            connection_data = (device_specification.response_details.address, int(device_specification.response_details.port))
+            connection_data = (
+                device_specification.response_details.address, int(device_specification.response_details.port))
             client_socket.connect(connection_data)
 
             try:
@@ -212,6 +215,7 @@ class TCPServer(Server):
                 client_socket.close()
                 return False
             return True
+
         client.close()
         return device_specification.name, register_client
 
