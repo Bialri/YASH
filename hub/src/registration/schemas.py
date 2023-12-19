@@ -4,8 +4,10 @@ from typing import Literal
 
 class Field(BaseModel):
     name: str
+    value: int | float | str | bool
     min: int | float | None = None
     max: int | float | None = None
+    value: int | float | str | bool
     type: Literal["int", "float", "str", "bool"]
 
     @field_validator('type')

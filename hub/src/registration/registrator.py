@@ -9,6 +9,7 @@ from .exceptions import RegistrationError, RollbackError, RegistrationRequestErr
 from .schemas import DeviceSpecification
 
 
+
 # steps:
 # 1. create password
 # 2. add user in mongo
@@ -127,11 +128,11 @@ class Registrator:
                 'rules': [
                     {'action': 'publish',
                      'permission': publish_rule,
-                     'topic': f'devices/{client_id}'},
+                     'topic': f'/devices/{client_id}/publish'},
 
                     {'action': 'subscribe',
                      'permission': 'allow',
-                     'topic': f'devices/{client_id}'}
+                     'topic': f'/devices/{client_id}'}
                 ],
                 'username': client_id
             }
@@ -178,7 +179,7 @@ class Registrator:
             raise ExceptionGroup('User is not created', [e,
                                                          RegistrationError('Request error, creation abort')])
 
-        response = {'host': HOST,
+        response = {'host': "111.111.111.111",
                     'port': EMQX_PORT,
                     'clientid': created_id,
                     'password': device_password,

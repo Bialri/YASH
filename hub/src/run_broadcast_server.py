@@ -1,4 +1,4 @@
-from servers import BroadcastServer
+from registration.servers import BroadcastServer
 import multiprocessing
 import time
 import datetime

@@ -18,7 +18,8 @@ async def add_new_device(websocket:WebSocket):
     await websocket.accept()
     try:
         process = await asyncio.create_subprocess_shell(
-            'source venv/bin/activate && venv/bin/python3 run_broadcast_server.py',
+            """source /Users/egor/PycharmProjects/mqtt_homecontrol/hub/venv/bin/activate && 
+            python3 /Users/egor/PycharmProjects/mqtt_homecontrol/hub/src/run_broadcast_server.py""",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE)
 
@@ -30,7 +31,6 @@ async def add_new_device(websocket:WebSocket):
         server = TCPServer(loop, 12222, a)
 
         reg_funcs = {}
-
         async for name, func in server.run_server():
             if name is not None:
                 await websocket.send_text(name)
