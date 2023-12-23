@@ -37,6 +37,7 @@ class DeviceSpecification(BaseModel):
     fields: list[Field]
     response_details: ResponseDetails
 
+
 class ErrorForm(BaseModel):
     status: str
     type: str

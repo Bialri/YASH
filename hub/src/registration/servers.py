@@ -7,6 +7,8 @@ from abc import ABC, abstractmethod
 import multiprocessing
 from pydantic import ValidationError
 from asyncio import BaseEventLoop
+from typing import Callable
+from pydantic import BaseModel
 
 from .exceptions import RegistrationError
 from .registrator import Registrator
@@ -20,7 +22,7 @@ class Server(ABC):
         pass
 
     @staticmethod
-    def get_local_ip():
+    def get_local_ip() -> str:
         """Get actual ip address in local network.
 
             Returns:
@@ -49,7 +51,7 @@ class Server(ABC):
 class TCPServer(Server):
     """TCP server that handle devices wanted to connect to hub and prepare registration functions for them"""
 
-    def __init__(self, loop, port, registrator: Registrator):
+    def __init__(self, loop: BaseEventLoop, port: int, registrator: Registrator) -> None:
         """Create new instance of TCP server
 
             Args:
@@ -66,7 +68,7 @@ class TCPServer(Server):
         self.server.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
         self.server.bind(('', self.port))
 
-    async def run_server(self):
+    async def run_server(self) -> tuple[str, Callable]:
         """Start server and yield as generator clients wanted to connect
 
             Yields:
@@ -92,7 +94,7 @@ class TCPServer(Server):
                 break
 
     @staticmethod
-    def _validate_request(json_string, schema):
+    def _validate_request(json_string: str, schema: BaseModel):
         """Validate json request by given schema.
 
             Args:
@@ -111,7 +113,7 @@ class TCPServer(Server):
             raise RegistrationError(f'Input string format is not correct. {e.json()}')
         return device_specification
 
-    async def _response(self, client, data):
+    async def _response(self, client: socket, data: str):
         """Send response to client.
 
             Args:
@@ -121,10 +123,10 @@ class TCPServer(Server):
         data_encoded = data.encode()
         await self.loop.sock_sendall(client, data_encoded)
 
-    def close(self):
+    def close(self) -> None:
         self.server.close()
 
-    async def _response_error(self, client, error_type, exception):
+    async def _response_error(self, client: socket, error_type: str, exception: Exception):
         """Send error to client.
 
             Args:
@@ -148,7 +150,7 @@ class TCPServer(Server):
         await self.registrator.emqx_acl_rollback(device_id)
         await self.registrator.emqx_user_rollback(device_id)
 
-    async def _handle_client(self, client):
+    async def _handle_client(self, client: socket) -> tuple[str, Callable] | tuple[None, None]:
         """Return clients name and client registration function
 
             Args:
@@ -170,7 +172,7 @@ class TCPServer(Server):
             client.close()
             return None, None
 
-        async def register_client():
+        async def register_client() -> bool:
             """Register device in system
 
                 Returns:
@@ -224,7 +226,7 @@ class BroadcastServer(Server):
     """UDP server that handle broadcast requests from devices and
     helps them find hub ip address in local network and port"""
 
-    def __init__(self, port, tcp_port):
+    def __init__(self, port: int, tcp_port: int) -> None:
         """Create new instance of UDP server.
 
             Args:
@@ -235,11 +237,11 @@ class BroadcastServer(Server):
         self.tcp_port = tcp_port
         self.event = multiprocessing.Event()
 
-    def stop(self):
+    def stop(self) -> None:
         """Set even to stop server."""
         self.event.set()
 
-    def run_server(self):
+    def run_server(self) -> None:
         """Start UDP server."""
         self.event.clear()
         server = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
@@ -262,7 +264,7 @@ class BroadcastServer(Server):
             print(request[0])
             self._handle_client(server, request)
 
-    def _handle_client(self, sock, client_data):
+    def _handle_client(self, sock: socket, client_data: str) -> None:
         """Send to client tcp server address and port.
 
             Args:

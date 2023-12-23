@@ -21,12 +21,12 @@ class Registrator:
     def __init__(self,
                  session_maker: APISessionMaker,
                  db_client: AsyncIOMotorClient,
-                 password_len=20):
+                 password_len=20) -> None:
         self.password_len = password_len
         self.session_maker = session_maker
         self.db_client = db_client
 
-    def _create_password(self):
+    def _create_password(self) -> str:
         """Create secure password with given length
 
             Returns:
@@ -36,7 +36,7 @@ class Registrator:
         password = ''.join([secrets.choice(pool) for _ in range(self.password_len)])
         return password
 
-    async def _create_emqx_user(self, client_id: str, password: str):
+    async def _create_emqx_user(self, client_id: str, password: str) -> None:
         """Create EMQX user by api.
 
             Args:
@@ -54,7 +54,7 @@ class Registrator:
                 if str(response.status)[0] != '2':
                     raise RegistrationRequestError("Request error. User is not created")
 
-    async def _insert_object(self, device_object):
+    async def _insert_object(self, device_object) -> str:
         """Insert document of new device
 
             Args:
@@ -66,7 +66,7 @@ class Registrator:
         inserted_id = (await self.db_client.local.devices.insert_one(device_object)).inserted_id
         return str(inserted_id)
 
-    async def emqx_user_rollback(self, device_id):
+    async def emqx_user_rollback(self, device_id) -> None:
         """Delete created emqx user.
 
             Args:
@@ -82,7 +82,7 @@ class Registrator:
                 if str(response.status)[0] != '2':
                     raise RollbackError("Request error. Delete request failed")
 
-    async def emqx_acl_rollback(self, device_id):
+    async def emqx_acl_rollback(self, device_id) -> None:
         """Delete created acl rules of user.
 
             Args:
@@ -98,7 +98,7 @@ class Registrator:
                 if str(response.status)[0] != '2':
                     raise RollbackError("Request error. Delete request failed")
 
-    async def db_rollback(self, device_id):
+    async def db_rollback(self, device_id) -> None:
         """Delete document of created user.
 
             Args:
@@ -111,7 +111,7 @@ class Registrator:
         if result.deleted_count == 0:
             raise RollbackError("Id doesn't found")
 
-    async def _set_acl_rules(self, client_id, device_type):
+    async def _set_acl_rules(self, client_id, device_type) -> None:
         """Create acl rules for emqx user.
 
             Args:
@@ -144,7 +144,7 @@ class Registrator:
                 if str(response.status)[0] != '2':
                     raise RegistrationError("Request error. ACL rules is not created")
 
-    async def register_device(self, device_specification: DeviceSpecification):
+    async def register_device(self, device_specification: DeviceSpecification) -> dict:
         """Register device in hub system.
 
             Args:

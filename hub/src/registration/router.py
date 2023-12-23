@@ -14,7 +14,7 @@ router = APIRouter(
 
 
 @router.websocket('/ws/create_device')
-async def add_new_device(websocket:WebSocket):
+async def add_new_device(websocket: WebSocket):
     await websocket.accept()
     try:
         process = await asyncio.create_subprocess_shell(
@@ -39,7 +39,7 @@ async def add_new_device(websocket:WebSocket):
             try:
                 response = await asyncio.wait_for(websocket.receive_text(), 2)
             except TimeoutError:
-                    continue
+                continue
             print(response)
             if response is not None:
                 result = await reg_funcs[response]()
@@ -54,4 +54,3 @@ async def add_new_device(websocket:WebSocket):
     finally:
         print('disconnected')
         server.close()
-
