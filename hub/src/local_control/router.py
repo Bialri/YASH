@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Response, status
-from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 from bson.errors import InvalidId
+
 from config import DB_URI
 from schemas import ResponseSchema, ErrorSchema, DeviceResponseSchema
-
+from .mqtt_schemas import CommandSchema
 from .schemas import ChangingField, DevicesIdsSchema
 from .sender import MQTTSender
+from database import get_db_session
 
 sender = MQTTSender("admin", "admin")  # TODO: loading admin credentials
 
@@ -20,8 +21,7 @@ router = APIRouter(
 async def chage_value(device_id: str,
                       changing_fields: list[ChangingField],
                       response: Response):
-    db_client = AsyncIOMotorClient(DB_URI)
-    async with await db_client.start_session() as session:
+    async with await get_db_session() as session:
         async with session.start_transaction():
             collection = session.client.local.devices
             id_filter = {"_id": ObjectId(device_id)}
@@ -39,8 +39,25 @@ async def chage_value(device_id: str,
                                 return response_message
 
                         topic = f'/devices/{str(device["_id"])}'
-                        # TODO: exception handler
-                        await sender.send_command(topic, field_to_change.model_dump_json())
+                        command = CommandSchema(command='update',
+                                                content=field_to_change.model_dump_json())
+                        try:
+                            result = await sender.send_command(topic, command)
+                            if result is None:
+                                response.status = status.HTTP_500_INTERNAL_SERVER_ERROR
+                                error = ErrorSchema(type='Connection error',
+                                                    message='Device response is empty')
+                                response_message = ResponseSchema(status='Failure',
+                                                                  results=error)
+                                return response_message
+
+                        except TimeoutError:
+                            response.status = status.HTTP_500_INTERNAL_SERVER_ERROR
+                            error = ErrorSchema(type='Connection Error',
+                                                message='Device response timed out')
+                            response_message = ResponseSchema(status="Failure", results=error)
+                            return response_message
+
                         await collection.update_one(id_filter,
                                                     {'$set': {f"fields.$[fields].value": field_to_change.value}},
                                                     array_filters=[{'fields.name': field_to_change.name}])
@@ -60,8 +77,7 @@ async def chage_value(device_id: str,
 @router.get('/devices/{device_id}/', response_model=ResponseSchema)
 async def get_device(device_id: str,
                      response: Response):
-    db_client = AsyncIOMotorClient(DB_URI)
-    async with await db_client.start_session() as session:
+    async with await get_db_session() as session:
         async with session.start_transaction():
             collection = session.client.local.devices
             try:
@@ -87,8 +103,7 @@ async def get_device(device_id: str,
 
 @router.get('/devices/', response_model=ResponseSchema)
 async def get_devices(response: Response):
-    db_client = AsyncIOMotorClient(DB_URI)
-    async with await db_client.start_session() as session:
+    async with await get_db_session() as session:
         async with session.start_transaction():
             collection = session.client.local.devices
             devices = collection.find()

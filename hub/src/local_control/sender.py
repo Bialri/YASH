@@ -1,42 +1,45 @@
-from aiohttp import ClientSession, BasicAuth
 import paho.mqtt.client as mqtt
 import asyncio
-import json
-from datetime import datetime,timedelta
+from datetime import datetime, timedelta
 from config import EMQX_PORT, HOST
+from .mqtt_schemas import ConfirmSchema, CommandSchema
+
 
 class MQTTSender:
 
-    def __init__(self, mqtt_user, mqtt_password):
+    def __init__(self, mqtt_user: str, mqtt_password: str) -> None:
         self.client = mqtt.Client(client_id=mqtt_user)
         self.client.username_pw_set(mqtt_user, mqtt_password)
+        self.confirm = False
+        self.message = None
 
-    async def send_command(self, topic, command):
+    def _receive_confirm(self, client, user_data, message):
+        confirmation = ConfirmSchema.model_validate_json(message.payload)
+        if confirmation.status:
+            self.confirm = True
+            self.message = confirmation.message
+
+    async def send_command(self, topic: str, command: CommandSchema) -> str:
         self.client.connect(host=HOST,
                             port=EMQX_PORT)
 
-        confirm = None
-
-        def receive_confirm(client, user_data, message):
-            print(message.payload)
-            nonlocal confirm
-            confirm = message.payload.decode()
+        self.confirm = False
+        self.message = None
 
         self.client.publish(topic=topic,
-                            payload=command,
+                            payload=command.model_to_json(),
                             qos=2)
-        recieve_topic = f'{topic}/publish'
-        self.client.subscribe(recieve_topic, qos=0)
-        self.client.on_message = receive_confirm
+        receive_topic = f'{topic}/publish'
+        self.client.subscribe(receive_topic, qos=0)
+        self.client.on_message = self._receive_confirm
         self.client.loop_start()
         start = datetime.now()
 
-        while not confirm:
-            await asyncio.sleep(0.2)
+        while not self.confirm:
+            await asyncio.sleep(0.5)
             if datetime.now() - start > timedelta(seconds=20):
                 raise TimeoutError("Confirm message hasn't received")
-        confirm_dict = json.loads(confirm)
 
         self.client.loop_stop()
         self.client.disconnect()
-        return confirm_dict
+        return self.message
